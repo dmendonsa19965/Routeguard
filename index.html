@@ -439,8 +439,6 @@ async function loadAndRenderLZs() {
 setTimeout(loadAndRenderLZs, 500);
 setInterval(loadAndRenderLZs, 5 * 60 * 1000);
 
-});
-
 // --- RENDER ALL FEATURES ---
 KML_DATA.forEach((f, i) => {
   const color = COLORS[f.color] || COLORS.unknown;
