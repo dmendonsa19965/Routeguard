@@ -616,7 +616,7 @@ function selectNearbyLZ(i) {
 
 // Parse many coordinate formats into {lat, lng}
 function parseCoords(input) {
-  input = input.trim();
+  input = input.trim().replace(/[\u2018\u2019\u02BC]/g, "'").replace(/[\u201C\u201D]/g, '"');
 
   // Format: 37.60983, -120.13467  or  37.60983 -120.13467
   let m = input.match(/^(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)$/);
