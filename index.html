@@ -411,7 +411,7 @@ function renderLZsFromData() {
   updateCounts();
   renderList(features);
 
-  const total = 52 + LZ_POINTS.length;
+  const total = KML_DATA.length + LZ_POINTS.length;
   const totalEl = document.getElementById('totalCount');
   if (totalEl) totalEl.textContent = total + ' features';
   const statusEl = document.querySelector('.header-right .status-item');
