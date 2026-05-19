@@ -616,34 +616,69 @@ function selectNearbyLZ(i) {
 
 // Parse many coordinate formats into {lat, lng}
 function parseCoords(input) {
-  input = input.trim().replace(/[\u2018\u2019\u02BC]/g, "'").replace(/[\u201C\u201D]/g, '"');
+        if (!input) return null;
+        // Normalize Unicode: smart quotes, primes, dashes, NBSP -> ASCII
+        let s = String(input)
+          .replace(/[\u2018\u2019\u02BC\u2032]/g, "'")
+          .replace(/[\u201C\u201D\u2033]/g, '"')
+          .replace(/[\u2010\u2011\u2012\u2013\u2014\u2212]/g, '-')
+          .replace(/\u00A0/g, ' ')
+          .trim()
+          .replace(/\s+/g, ' ');
 
-  // Format: 37.60983, -120.13467  or  37.60983 -120.13467
-  let m = input.match(/^(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)$/);
-  if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
+        // European comma-as-decimal pattern
+        if (/^-?\d+,\d+\s*[;\s]\s*-?\d+,\d+$/.test(s)) {
+          s = s.replace(/,/g, '.').replace(/;/g, ' ');
+        } else {
+          s = s.replace(/;/g, ',');
+        }
 
-  // Format: 37 36.59'N 120 08.08'W  (DDM)
-  m = input.match(/(\d+)\s+([\d.]+)'?\s*([NS])[,\s]+(\d+)\s+([\d.]+)'?\s*([EW])/i);
-  if (m) {
-    let lat = parseFloat(m[1]) + parseFloat(m[2]) / 60;
-    let lng = parseFloat(m[4]) + parseFloat(m[5]) / 60;
-    if (m[3].toUpperCase() === 'S') lat = -lat;
-    if (m[6].toUpperCase() === 'W') lng = -lng;
-    return { lat, lng };
-  }
+        // 1) Decimal
+        let m = s.match(/^(-?\d+\.?\d*)[,\s]+(-?\d+\.?\d*)$/);
+        if (m) return { lat: parseFloat(m[1]), lng: parseFloat(m[2]) };
 
-  // Format: 37°36'35"N 120°08'04"W  (DMS)
-  m = input.match(/(\d+)[°\s]([\d.]+)['\s]([\d.]+)"?\s*([NS])[,\s]+(\d+)[°\s]([\d.]+)['\s]([\d.]+)"?\s*([EW])/i);
-  if (m) {
-    let lat = parseFloat(m[1]) + parseFloat(m[2])/60 + parseFloat(m[3])/3600;
-    let lng = parseFloat(m[5]) + parseFloat(m[6])/60 + parseFloat(m[7])/3600;
-    if (m[4].toUpperCase() === 'S') lat = -lat;
-    if (m[8].toUpperCase() === 'W') lng = -lng;
-    return { lat, lng };
-  }
+        // 2) DDM, hemisphere suffix
+        m = s.match(/(\d+)\s+([\d.]+)'?\s*([NS])[,\s]+(\d+)\s+([\d.]+)'?\s*([EW])/i);
+        if (m) {
+          let lat = parseFloat(m[1]) + parseFloat(m[2]) / 60;
+          let lng = parseFloat(m[4]) + parseFloat(m[5]) / 60;
+          if (m[3].toUpperCase() === 'S') lat = -lat;
+          if (m[6].toUpperCase() === 'W') lng = -lng;
+          return { lat, lng };
+        }
 
-  return null;
-}
+        // 3) DDM, hemisphere prefix
+        m = s.match(/([NS])\s*(\d+)\s+([\d.]+)'?[,\s]+([EW])\s*(\d+)\s+([\d.]+)'?/i);
+        if (m) {
+          let lat = parseFloat(m[2]) + parseFloat(m[3]) / 60;
+          let lng = parseFloat(m[5]) + parseFloat(m[6]) / 60;
+          if (m[1].toUpperCase() === 'S') lat = -lat;
+          if (m[4].toUpperCase() === 'W') lng = -lng;
+          return { lat, lng };
+        }
+
+        // 4) DMS, hemisphere suffix
+        m = s.match(/(\d+)[\u00B0\s]([\d.]+)['\s]([\d.]+)"?\s*([NS])[,\s]+(\d+)[\u00B0\s]([\d.]+)['\s]([\d.]+)"?\s*([EW])/i);
+        if (m) {
+          let lat = parseFloat(m[1]) + parseFloat(m[2]) / 60 + parseFloat(m[3]) / 3600;
+          let lng = parseFloat(m[5]) + parseFloat(m[6]) / 60 + parseFloat(m[7]) / 3600;
+          if (m[4].toUpperCase() === 'S') lat = -lat;
+          if (m[8].toUpperCase() === 'W') lng = -lng;
+          return { lat, lng };
+        }
+
+        // 5) DMS, hemisphere prefix
+        m = s.match(/([NS])\s*(\d+)[\u00B0\s]([\d.]+)['\s]([\d.]+)"?[,\s]+([EW])\s*(\d+)[\u00B0\s]([\d.]+)['\s]([\d.]+)"?/i);
+        if (m) {
+          let lat = parseFloat(m[2]) + parseFloat(m[3]) / 60 + parseFloat(m[4]) / 3600;
+          let lng = parseFloat(m[6]) + parseFloat(m[7]) / 60 + parseFloat(m[8]) / 3600;
+          if (m[1].toUpperCase() === 'S') lat = -lat;
+          if (m[5].toUpperCase() === 'W') lng = -lng;
+          return { lat, lng };
+        }
+
+        return null;
+      }
 
 // Haversine distance in meters between two lat/lng points
 function distanceMeters(lat1, lng1, lat2, lng2) {
