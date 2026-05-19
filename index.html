@@ -510,6 +510,7 @@ function onNavInput() {
 
   if (!val) {
     hideLZPreview();
+    hideNearbyList();
     matchedLZ = null;
     document.getElementById('navBtn').textContent = '▶ Open in Google Maps';
     return;
@@ -520,27 +521,97 @@ function onNavInput() {
          || LZ_POINTS.find(l => l.name.toLowerCase().includes(valLower));
 
   // --- 2. COORDINATE MATCH ---
+  let parsed = null;
   if (!lz) {
-    const parsed = parseCoords(val);
+    parsed = parseCoords(val);
     if (parsed) {
-      lz = findNearbyLZ(parsed.lat, parsed.lng, 0.05); // ~50 meter tolerance
+      // Try exact match first (within 100m)
+      lz = findNearbyLZ(parsed.lat, parsed.lng, 100);
     }
   }
 
   if (lz) {
     matchedLZ = lz;
     showLZPreview(lz);
+    hideNearbyList();
     const feat = features.find(f => f.name === lz.name && f.shape === 'point');
     if (feat) {
       map.setView([lz.lat, lz.lng], 15);
       feat.leafletLayer.openPopup();
       highlightCard(feat.idx);
     }
+  } else if (parsed) {
+    // Coords entered but no exact LZ match → show nearby LZs within 5 miles
+    matchedLZ = null;
+    hideLZPreview();
+    const nearby = findNearbyLZs(parsed.lat, parsed.lng, 8047, 5); // 5 miles = 8047m
+    showNearbyList(parsed, nearby);
+    document.getElementById('navBtn').textContent = '▶ Navigate to These Coords';
+    // Drop a temporary marker at the coords + pan to it
+    if (window._tempCoordMarker) map.removeLayer(window._tempCoordMarker);
+    window._tempCoordMarker = L.marker([parsed.lat, parsed.lng], {
+      icon: L.divIcon({
+        html: '<div style="width:14px;height:14px;background:#fff;border:3px solid #00e5ff;border-radius:50%;box-shadow:0 0 12px #00e5ff"></div>',
+        iconSize:[14,14], iconAnchor:[7,7], className:''
+      })
+    }).addTo(map).bindPopup(`<div class="popup-cat">ENTERED COORDS</div><div class="popup-name">${parsed.lat.toFixed(5)}, ${parsed.lng.toFixed(5)}</div>`, {className:'custom-popup'});
+    map.setView([parsed.lat, parsed.lng], 13);
+    matchedLZ = { lat: parsed.lat, lng: parsed.lng, name: 'Custom Coordinates' };
   } else {
     matchedLZ = null;
     hideLZPreview();
+    hideNearbyList();
     document.getElementById('navBtn').textContent = '▶ Open in Google Maps';
   }
+}
+
+function showNearbyList(coords, nearby) {
+  let el = document.getElementById('nearbyList');
+  if (!el) {
+    // Create the nearby list element below the preview
+    el = document.createElement('div');
+    el.id = 'nearbyList';
+    el.style.cssText = 'margin-top:8px;background:var(--surface2);border:1px solid var(--border2);border-radius:6px;padding:10px 12px;position:relative;overflow:hidden';
+    const preview = document.getElementById('lzPreview');
+    preview.parentNode.insertBefore(el, preview.nextSibling);
+  }
+  
+  const milesFromCoords = nearby.map(n => (n.distMeters / 1609.34).toFixed(2));
+  let html = `<div style="font-family:var(--mono);font-size:9px;letter-spacing:0.08em;text-transform:uppercase;color:var(--text2);margin-bottom:6px">📍 Coords entered — nearby LZs:</div>`;
+  
+  if (nearby.length === 0) {
+    html += `<div style="font-size:11px;color:var(--text2);padding:4px 0">No LZs within 5 miles. You can still navigate to these coordinates.</div>`;
+  } else {
+    nearby.forEach((lz, i) => {
+      const statusColor = lz.status === 'Approved' ? '#00e5ff' : lz.status === 'Unapproved' ? '#ff4757' : '#ffe234';
+      html += `<div onclick="selectNearbyLZ(${i})" style="cursor:pointer;padding:6px 8px;margin:3px 0;background:rgba(0,0,0,0.2);border-radius:4px;display:flex;justify-content:space-between;align-items:center;gap:8px" onmouseover="this.style.background='rgba(0,229,255,0.1)'" onmouseout="this.style.background='rgba(0,0,0,0.2)'">
+        <div style="overflow:hidden;flex:1">
+          <div style="font-size:12px;color:${statusColor};font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${lz.name}</div>
+          <div style="font-size:10px;color:var(--text2)">${lz.vehicle || ''} ${lz.surface ? '· ' + lz.surface : ''}</div>
+        </div>
+        <div style="font-family:var(--mono);font-size:10px;color:var(--text2);white-space:nowrap">${milesFromCoords[i]} mi</div>
+      </div>`;
+    });
+  }
+  el.innerHTML = html;
+  el.style.display = 'block';
+  window._nearbyResults = nearby;
+}
+
+function hideNearbyList() {
+  const el = document.getElementById('nearbyList');
+  if (el) el.style.display = 'none';
+  if (window._tempCoordMarker) {
+    map.removeLayer(window._tempCoordMarker);
+    window._tempCoordMarker = null;
+  }
+}
+
+function selectNearbyLZ(i) {
+  const lz = window._nearbyResults[i];
+  if (!lz) return;
+  document.getElementById('navInput').value = lz.name;
+  onNavInput();
 }
 
 // Parse many coordinate formats into {lat, lng}
@@ -574,17 +645,42 @@ function parseCoords(input) {
   return null;
 }
 
-// Find closest LZ within tolerance (in decimal degrees, ~0.05 ≈ 50m)
-function findNearbyLZ(lat, lng, tolerance) {
+// Haversine distance in meters between two lat/lng points
+function distanceMeters(lat1, lng1, lat2, lng2) {
+  const R = 6371000;
+  const toRad = d => d * Math.PI / 180;
+  const dLat = toRad(lat2 - lat1);
+  const dLng = toRad(lng2 - lng1);
+  const a = Math.sin(dLat/2) ** 2 + Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLng/2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+// Find closest LZ within toleranceMeters (default ~100m for exact match)
+function findNearbyLZ(lat, lng, toleranceMeters = 100) {
   let best = null, bestDist = Infinity;
   LZ_POINTS.forEach(lz => {
-    const dist = Math.sqrt(Math.pow(lz.lat - lat, 2) + Math.pow(lz.lng - lng, 2));
-    if (dist < tolerance && dist < bestDist) {
+    if (lz.lat == null || lz.lng == null) return;
+    const dist = distanceMeters(lat, lng, lz.lat, lz.lng);
+    if (dist < toleranceMeters && dist < bestDist) {
       bestDist = dist;
-      best = lz;
+      best = { ...lz, distMeters: dist };
     }
   });
   return best;
+}
+
+// Find all LZs within radiusMeters, sorted by distance
+function findNearbyLZs(lat, lng, radiusMeters = 5000, max = 5) {
+  const results = [];
+  LZ_POINTS.forEach(lz => {
+    if (lz.lat == null || lz.lng == null) return;
+    const dist = distanceMeters(lat, lng, lz.lat, lz.lng);
+    if (dist <= radiusMeters) {
+      results.push({ ...lz, distMeters: dist });
+    }
+  });
+  results.sort((a, b) => a.distMeters - b.distMeters);
+  return results.slice(0, max);
 }
 
 function showLZPreview(lz) {
