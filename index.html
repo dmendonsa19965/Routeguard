@@ -389,7 +389,7 @@ function renderLZsFromData() {
     const isLZ = (color === 'lz_approved' || color === 'lz_caution');
     const layer = L.marker([lz.lat, lz.lng], { icon: markerIcon(cssColor, isLZ) });
     const isBoulderCreek = /boulder\s*creek/i.test(lz.name || '');
-    const navWaypoints = isBoulderCreek ? '&waypoints=40.87753,-123.86325|40.80389,-123.81765' : '';
+    const navWaypoints = isBoulderCreek ? '&waypoints=40.9301,-123.860172|40.87753,-123.86325|40.80389,-123.81765' : '';
     const navBtn = '<a class="popup-nav-btn" href="https://www.google.com/maps/dir/?api=1&destination=' + lz.lat + ',' + lz.lng + navWaypoints + '" target="_blank">\u25b6 Navigate Here</a>';
     const popupHTML = '<div class="popup-cat">' + (LABELS[color] || color) + '</div>' +
                       '<div class="popup-name" style="color:' + cssColor + '">' + lz.name + '</div>' +
@@ -449,7 +449,7 @@ KML_DATA.forEach((f, i) => {
   }
 
   const isBoulderCreek = /boulder\s*creek/i.test(f.name || '');
-  const navWaypoints = isBoulderCreek ? '&waypoints=40.87753,-123.86325|40.80389,-123.81765' : '';
+  const navWaypoints = isBoulderCreek ? '&waypoints=40.9301,-123.860172|40.87753,-123.86325|40.80389,-123.81765' : '';
   const navBtn = (navLat && navLng)
     ? `<a class="popup-nav-btn" href="https://www.google.com/maps/dir/?api=1&destination=${navLat},${navLng}${navWaypoints}" target="_blank">▶ Navigate Here</a>`
     : '';
