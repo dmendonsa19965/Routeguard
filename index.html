@@ -753,7 +753,7 @@ function openNavigation() {
 
   // If a known LZ is matched — navigate to its exact coords
   if (matchedLZ) {
-    window.open(`https://www.google.com/maps/dir/?api=1&destination=${matchedLZ.lat},${matchedLZ.lng}`, '_blank');
+    window.open(`https://www.google.com/maps/dir/?api=1&destination=${matchedLZ.lat},${matchedLZ.lng}${/boulder\s*creek/i.test(matchedLZ.name||'')?'&waypoints=40.9301,-123.860172|40.87753,-123.86325|40.80389,-123.81765':''}`, '_blank');
     return;
   }
 
