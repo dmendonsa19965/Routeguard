@@ -448,8 +448,10 @@ KML_DATA.forEach((f, i) => {
     navLng = Array.isArray(f.coords) ? f.coords[1] : null;
   }
 
+  const isBoulderCreek = /boulder\s*creek/i.test(f.name || '');
+  const navWaypoints = isBoulderCreek ? '&waypoints=40.87753,-123.86325|40.80389,-123.81765' : '';
   const navBtn = (navLat && navLng)
-    ? `<a class="popup-nav-btn" href="https://www.google.com/maps/dir/?api=1&destination=${navLat},${navLng}" target="_blank">▶ Navigate Here</a>`
+    ? `<a class="popup-nav-btn" href="https://www.google.com/maps/dir/?api=1&destination=${navLat},${navLng}${navWaypoints}" target="_blank">▶ Navigate Here</a>`
     : '';
 
   const popupHTML = `
