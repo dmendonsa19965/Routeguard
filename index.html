@@ -436,7 +436,12 @@ setTimeout(loadAndRenderLZs, 500);
 setInterval(loadAndRenderLZs, 5 * 60 * 1000);
 
 // --- RENDER ALL FEATURES ---
-KML_DATA.forEach((f, i) => {
+var __kmlLayers = [];
+function renderFeatureList(SRC){
+  __kmlLayers.forEach(function(rec){ if(layerGroups[rec.cat]) layerGroups[rec.cat].removeLayer(rec.layer); });
+  __kmlLayers = [];
+  for(var __j=features.length-1; __j>=0; __j--){ if(features[__j].__kml) features.splice(__j,1); }
+  SRC.forEach((f,i)=>{
   const color = COLORS[f.color] || COLORS.unknown;
   const label = LABELS[f.color] || f.color;
   const isLZ = f.color === 'lz_approved' || f.color === 'lz_caution';
@@ -473,12 +478,16 @@ KML_DATA.forEach((f, i) => {
 
   layer.bindPopup(popupHTML, {className:'custom-popup', maxWidth:260});
   layer.on('click', () => highlightCard(i));
-  layerGroups[f.color] ? layerGroups[f.color].addLayer(layer) : layerGroups.unknown.addLayer(layer);
-  features.push({...f, idx:i, leafletLayer:layer});
+  var __cat = layerGroups[f.color] ? f.color : 'unknown'; layerGroups[__cat].addLayer(layer); __kmlLayers.push({cat:__cat, layer:layer});
+  features.push({...f, idx: 100000 + i, leafletLayer: layer, __kml: true});
 });
 
-updateCounts();
-renderList(features);
+  updateCounts();
+  renderList(features);
+}
+// baseline static render (fail-safe); live loader overwrites KML layer when feed reachable
+renderFeatureList(KML_DATA);
+var __lastGoodCount = KML_DATA.length;
 
 // --- GOOGLE PLACES AUTOCOMPLETE ---
 let autocomplete;
@@ -848,6 +857,67 @@ function exportJSON() {
   const a = document.createElement('a'); a.href=URL.createObjectURL(blob);
   a.download='routeguard-data.json'; a.click();
 }
+
+/* ===== LIVE KML LOADER (auto-added) ===== */
+(function(){
+  var KML_URL = 'https://www.google.com/maps/d/kml' + '?mid=' + '1o6ttP6IYDBm12YBzu75pCmO7mA-M8kU' + '&forcekml=1';
+  function classify(hex,shape,folder){
+    var c=(hex||'').toLowerCase(); var f=(folder||'').toLowerCase();
+    if(shape==='point' && /directions from/.test(f)) return 'waypoint';
+    switch(c){
+      case 'a52714': return 'prohibited';
+      case '0f9d58': return 'approved';
+      case 'f57c00': return shape==='polygon' ? 'caution_zone' : 'caution';
+      case 'ffd600': return 'caution';
+      case 'fbc02d': return shape==='point' ? 'lz_caution' : 'caution';
+      case 'f9a825': return shape==='point' ? 'lz_caution' : 'caution';
+      case 'db4436': return shape==='point' ? 'waypoint' : 'prohibited';
+    }
+    return (shape==='point') ? 'lz_caution' : 'prohibited';
+  }
+  function coordsFrom(txt){ return (txt||'').trim().split(/\s+/).map(function(p){var a=p.split(',');var lng=parseFloat(a[0]),lat=parseFloat(a[1]);return (isFinite(lat)&&isFinite(lng))?[lat,lng]:null;}).filter(Boolean); }
+  function hexFromStyleUrl(su){ var m=(su||'').match(/[0-9a-fA-F]{6}/); return m?m[0]:''; }
+  function kmlToFeatures(xmlText){
+    var doc=new DOMParser().parseFromString(xmlText,'application/xml');
+    if(doc.getElementsByTagName('parsererror').length) return null;
+    function folderName(node){var p=node.parentNode;while(p){if(p.tagName==='Folder'){var nm=p.getElementsByTagName('name')[0];return nm?nm.textContent:'';}p=p.parentNode;}return '';}
+    var pms=doc.getElementsByTagName('Placemark'); var out=[];
+    for(var i=0;i<pms.length;i++){var pm=pms[i];
+      var nm=pm.getElementsByTagName('name')[0]; var de=pm.getElementsByTagName('description')[0];
+      var name=nm?nm.textContent.trim():''; var desc=de?de.textContent.replace(/<[^>]*>/g,' ').replace(/\s+/g,' ').trim():'';
+      var folder=folderName(pm);
+      var suEl=pm.getElementsByTagName('styleUrl')[0]; var su=suEl?suEl.textContent:'';
+      var hex=hexFromStyleUrl(su).toLowerCase();
+      var poly=pm.getElementsByTagName('Polygon')[0], line=pm.getElementsByTagName('LineString')[0], pt=pm.getElementsByTagName('Point')[0];
+      var shape, ctEl, coords;
+      if(poly){shape='polygon';ctEl=poly.getElementsByTagName('coordinates')[0];}
+      else if(line){shape='line';ctEl=line.getElementsByTagName('coordinates')[0];}
+      else if(pt){shape='point';ctEl=pt.getElementsByTagName('coordinates')[0];}
+      else continue;
+      var ct=ctEl?ctEl.textContent:''; var pts=coordsFrom(ct);
+      if(!pts.length) continue;
+      if(shape==='polygon') coords=[pts]; else if(shape==='line') coords=pts; else coords=pts[0];
+      out.push({name:name,folder:folder,desc:desc,color:classify(hex,shape,folder),shape:shape,coords:coords});
+    }
+    return out;
+  }
+  function setLiveStamp(n){var el=document.getElementById('totalCount');if(!el)return;var d=new Date(),hh=d.getHours(),mm=('0'+d.getMinutes()).slice(-2),ap=hh>=12?'PM':'AM',h12=((hh+11)%12)+1;el.textContent=n+' features \u00b7 live '+h12+':'+mm+' '+ap;}
+  function loadLive(){
+    fetch(KML_URL,{cache:'no-store'}).then(function(r){return r.ok?r.text():Promise.reject(r.status);})
+    .then(function(xml){
+      var live=kmlToFeatures(xml);
+      if(!live||!live.length) return;
+      if(typeof __lastGoodCount==='number' && live.length < __lastGoodCount*0.6) return;
+      renderFeatureList(live);
+      __lastGoodCount=live.length;
+      setLiveStamp(features.length);
+    }).catch(function(){});
+  }
+  loadLive();
+  setInterval(loadLive,5*60*1000);
+})();
+/* ===== END LIVE KML LOADER ===== */
+
 </script>
 </body>
 </html>
